@@ -1,0 +1,290 @@
+---
+title: "The state of Raster Data"
+subtitle: "Updates since 2023"
+author:
+  - name: Rafael Schouten
+    orcid:
+    email: rafaelschouten@gmail.com
+    affiliation:
+      - name: NINA Oslo
+date: "2025-01-06"
+engine: julia
+format:
+  revealjs:
+    theme: [simple, style.scss] # beige blood dark default league moon night serif simple sky solarized
+    incremental: true
+    toc: true
+    toc-depth: 1
+    slide-number: true
+    overview: true
+    code-line-numbers: false
+    highlight-style: ayu
+execute:
+    echo: true
+---
+
+```{julia}
+#| echo: false
+if !haskey(ENV, "RASTERDATASOURCES_PATH")
+    ENV["RASTERDATASOURCES_PATH"] = tempdir();
+end
+```
+
+# Upstream ecosystem
+
+# DimensionalData 
+
+Named dimensions and lookups for arrays
+
+## News
+
+- Widely implemented in spatial ecosystem
+- YAXArrays.jl is now DD compatible
+- PyramidScheme.jl is built on DimensionalData.jl
+- Ecosystem package interop is now easy: `Raster(yaxarray)` just works
+
+## DD improvements
+
+## `@d` macro: dimension-aware broadcasts
+
+```{julia}
+using DimensionalData
+da1 = fill(2, X(3))
+da2 = fill(2, Y(4), X(3))
+```
+
+---
+
+Base broadcast fails:
+```{julia}
+#| error: true
+da1 .* da2
+```
+
+---
+
+`@d` broadcast works:
+```{julia}
+@d da1 .* da2
+```
+
+## AlgebraOfGraphics.jl integration 
+
+```{julia}
+using DimensionalData, AlgebraOfGraphics, CairoMakie
+A = rand(X(1:5); name=:test)
+data(A) * mapping(X, :test) * visual(CairoMakie.Lines) |> draw
+```
+
+## `groupby`
+
+Group temporal data by month
+```{julia}
+using DimensionalData, Dates, Statistics
+A = rand(X(1:0.1:20), Y(1:20), Ti(DateTime(2000):Day(3):DateTime(2003)));
+groups = groupby(A, Ti => month)
+```
+
+---
+```{julia}
+groupmeans = mean.(groups) # Take the monthly mean
+```
+
+- `DimSelectors`/`DimIndices` indexing
+- Extents.jl `Extent` indexing
+- Python Xarray integration (thanks `@JamesWrigley`)
+
+## DD Roadmap
+
+- Any Table.jl object to `DimStack`
+- Interpolations.jl extension
+- `combine` for `groupby` 
+- lazy `GroupBy` for DiskArrays.jl use cases
+
+# Extents.jl
+
+Least known but most depended on package in geospatial data
+- Integrates with GeoInterface.jl and DimensionalData.jl
+
+---
+
+```{julia}
+using DimensionalData, Extents
+A = rand(X(1:0.1:20), Y(1:20))
+B = rand(Y(30:40), X(15:0.1:30))
+```
+All AbstractDimArray and AbstractDimStack have extents:
+```{julia}
+Extents.extent(A)
+```
+
+# Extents.jl News
+
+## DE-9IM predicates
+
+`contains`, `coveredby`, `covers`, `disjoint`, `equals`, `extent`, `intersects`, `overlaps`, `touches`, `within`
+
+```{julia}
+Extents.intersects(extent(A), extent(B))
+```
+```{julia}
+Extents.disjoint(extent(A), extent(B))
+```
+
+## Operations
+
+ `intersection`, `union`, `buffer`, `grow`
+
+```{julia}
+Extents.union(extent(A), extent(B))
+```
+
+Extents.jl methods are extremly fast for use in high performance algorithms:
+```{julia}
+using BenchmarkTools
+@btime Extents.union($(extent(A)), $(extent(B)))
+```
+
+## Extents.jl Roadmap:
+- Closed/open intervals for better representation of rasters
+- Cyclic dimensions
+
+# DiskArrays.jl
+
+Lazy disk and network reads of chunked arrays
+
+## DiskArrays.jl News
+
+- Major structural update to accomodate NCDatasets.jl
+- Many bugfixes
+- DiskArrayEngine.jl for advanced use cases
+
+## DiskArrays.jl Issues
+
+- Slow iteration
+- Some missing Base implementations
+- Bugs
+
+# CommonDataModel.jl
+
+Unites CF standards and dataset access accross many raster data types
+
+Implemented in :
+- NCDatasets.jl
+- GRIBDatasets.jl
+- TiffDatasets.jl
+- ZarrDatasets.jl
+
+# CommonDataModel.jl Issues
+- `CommonDataModel.CFVariable` is not DiskArays.jl compatible
+
+# Rasters.jl
+
+Builds on:
+- DimensionalData.jl
+- DiskArrays.jl 
+- CommonDataModel.jl 
+
+To define container objects for all raster data: 
+- `Raster`
+- `RasterStack`
+- `RasterSeries`
+
+## Rasters News: Performance
+
+Thanks to `@asingvi` for setting this up
+
+![image](https://github.com/user-attachments/assets/1c6c56ac-4c5a-4096-984d-15bf2783682c)
+
+
+## Rasters News: CommonDataModel.jl integration 
+
+Thanks `@tcarion`
+
+- Grib souce (thanks again `@tcarion`)
+- Zarr source (thanks `@felixcremer`)
+
+```{julia}
+using Rasters, ZarrDatasets
+path = "https://s3.bgc-jena.mpg.de:9000/esdl-esdc-v3.0.2/esdc-16d-2.5deg-46x72x1440-3.0.2.zarr"
+zraster = Raster(path; name="air_temperature_2m")
+```
+
+---
+
+File types                      | Package         | Write    
+------------------------------- | ----------      | -----
+Grib (read only)                | GRIBDatasets.jl | no 
+Zarr (PR nearly done!)          | ZarrDatasets.jl | no 
+Netcdf/hdf5                     | NCDatasets.jl   | yes 
+grd (simple Mmap data from R)   | native          | yes 
+GeoTIFF and everything else     | ArchGDAL.jl     | yes 
+
+## Rasters news: Chunk setting
+
+Save a tif and netcdf with specified chunks
+```{julia}
+using Rasters, RasterDataSources, ArchGDAL, NCDatasets
+bioclim5 = Raster(WorldClim{BioClim}, 5);
+write("rechunked_bioclim5.tif", bioclim5; chunks=(X(256), Y(256)), force=true)
+write("rechunked_bioclim5.nc", bioclim5; chunks=(X(256), Y(256)), force=true)
+```
+
+--- 
+
+Read it and check the the chunk pattern:
+```{julia}
+using DiskArrays
+rast = Raster("rechunked_bioclim5.tif"; lazy=true)
+DiskArrays.eachchunk(rast)
+```
+
+--- 
+
+And the same for netcdf:
+```{julia}
+rast = Raster("rechunked_bioclim5.nc"; lazy=true)
+DiskArrays.eachchunk(rast)
+```
+
+- Optimised and improved `extract` (thanks `@tiemvanderdeure`)
+- Fast `cellarea` (thanks `@tiemvanderdeure`)
+
+## Rasters Roadmap: PRs about to merge
+- Standardised missing value and scale/offset handling
+- `create` method for easier definition of empty `Raster` and `RasterStack`
+- Even faster everything
+  - mosaic
+  - aggregate
+  - extract lines
+  - zonal lines
+
+# Rasters Roadmap: planned
+- Make all methods work lazily with DiskArrays.jl
+- Unit handling for data and lookup values
+- Zarr writer
+- Native `resample`
+
+# Downstream ecosystem
+
+## GeoMakie.jl integration
+
+```{julia}
+using Rasters, RasterDataSources, ArchGDAL, GeoMakie
+bioclim5 = Raster(WorldClim{BioClim}, 5);
+fig = Figure();
+ga = GeoAxis(fig[1, 1]; dest="+proj=ortho +lon_0=19 +lat_0=72")
+Makie.heatmap!(ga, bioclim5)
+fig
+```
+
+## RemoteSensingToolbox
+
+[RemoteSensingToolbox.jl](https://github.com/JoshuaBillson/RemoteSensingToolbox.jl)
+
+```{julia}
+#using RemoteSensingToolbox, Rasters
+#src = Landsat8("data/LC08_L2SP_043024_20200802_20200914_02_T1")
+#stack = Raster(src, :clouds; lazy=false)
+#true_color(Landsat8, stack)
+```
