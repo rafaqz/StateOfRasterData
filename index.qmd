@@ -1,5 +1,5 @@
 ---
-title: "The state of Raster Data"
+title: "The state of Raster Data in Julia"
 subtitle: "Updates since 2023"
 author:
   - name: Rafael Schouten
@@ -25,6 +25,7 @@ execute:
 
 ```{julia}
 #| echo: false
+#| output: false
 if !haskey(ENV, "RASTERDATASOURCES_PATH")
     ENV["RASTERDATASOURCES_PATH"] = tempdir();
 end
@@ -33,29 +34,82 @@ end
 # Raster data ecosystem
 
 ```{mermaid}
-flowchart LR
-  DiskArrays.jl-->ArchGDAL.jl
-  DiskArrays.jl-->Zarr.jl
-  Zarr.jl-->ZarrDatasets.jl
-  CommonDataModel.jl-->NCDatasets.jl
-  CommonDataModel.jl-->ZarrDatasets.jl
-  CommonDataModel.jl-->GRIBDatasets.jl
-  DiskArrays.jl-->NCDatasets.jl
-  DiskArrays.jl-->ZarrDatasets.jl
-  DiskArrays.jl-->GRIBDatasets.jl
-  DiskArrays.jl-->NetCDF.jl
-  NCDatasets.jl-->Rasters.jl
-  ZarrDatasets.jl-->Rasters.jl
-  GRIBDatasets.jl-->Rasters.jl
-  Extents.jl-->GeoInterface.jl
-  Extents.jl-->DimensionalData.jl
-  GeoInterface.jl-->Rasters.jl
-  DimensionalData.jl-->Rasters.jl
-  NetCDF.jl-->YAXArrays.jl
-  Zarr.jl-->YAXArrays.jl
-  ArchGDAL.jl-->YAXArrays.jl
-  DimensionalData.jl-->YAXArrays.jl
-  Rasters.jl-->RemoteSensingToolkit.jl
+%%| echo: false
+%%| width: 50%
+flowchart
+  subgraph legend
+    Interface
+    DataSource
+    CFDataSource
+    FrontEnd
+  end
+  subgraph dependencies__
+    Extents.jl-->DimensionalData.jl
+    Extents.jl-->GeoInterface.jl
+    Extents.jl-->ArchGDAL.jl
+    ArchGDAL.jl-->TiffDatasets.jl
+    ArchGDAL.jl-->Rasters.jl
+    ArchGDAL.jl-->YAXArrays.jl
+    Zarr.jl-->ZarrDatasets.jl
+    CommonDataModel.jl-->GRIBDatasets.jl
+    DiskArrays.jl-->ArchGDAL.jl
+    DiskArrays.jl-->Zarr.jl
+    DiskArrays.jl-->ZarrDatasets.jl
+    DiskArrays.jl-->GRIBDatasets.jl
+    DiskArrays.jl-->NCDatasets.jl
+    DiskArrays.jl-->NetCDF.jl
+    CommonDataModel.jl-->TiffDatasets.jl
+    CommonDataModel.jl-->ZarrDatasets.jl
+    CommonDataModel.jl-->NCDatasets.jl
+    GeoInterface.jl-->Rasters.jl
+    DimensionalData.jl-->Rasters.jl
+    NCDatasets.jl-->Rasters.jl
+    CommonDataModel.jl-->Rasters.jl
+    ZarrDatasets.jl-->Rasters.jl
+    GRIBDatasets.jl-->Rasters.jl
+    GRIB.jl-->GRIBDatasets.jl
+    NetCDF.jl-->YAXArrays.jl
+    DimensionalData.jl-->YAXArrays.jl
+    Zarr.jl-->YAXArrays.jl
+  end
+
+style Rasters.jl fill:#f9f
+style YAXArrays.jl fill:#f9f
+style GRIBDatasets.jl fill:#9ff
+style NCDatasets.jl fill:#9ff
+style ZarrDatasets.jl fill:#9ff
+style TiffDatasets.jl fill:#9ff
+style GRIB.jl fill:#ff9
+style Zarr.jl fill:#ff9
+style NetCDF.jl fill:#ff9
+style ArchGDAL.jl fill:#ff9
+style FrontEnd fill:#f9f
+style DataSource fill:#ff9
+style CFDataSource fill:#9ff
+```
+
+## Abstractions and interfaces only
+
+```{mermaid}
+%%| echo: false
+flowchart
+  subgraph legend
+    Interface
+    FrontEnd
+  end
+  subgraph dependencies__
+    Extents.jl-->DimensionalData.jl
+    Extents.jl-->GeoInterface.jl
+    DiskArrays.jl-->YAXArrays.jl
+    DiskArrays.jl-->Rasters.jl
+    DimensionalData.jl-->YAXArrays.jl
+    DimensionalData.jl-->Rasters.jl
+    GeoInterface.jl-->Rasters.jl
+    CommonDataModel.jl-->Rasters.jl
+  end
+style Rasters.jl fill:#f9f
+style YAXArrays.jl fill:#f9f
+style FrontEnd fill:#f9f
 ```
 
 # DimensionalData.jl
@@ -65,7 +119,7 @@ Named dimensions and lookups for arrays
 ## DimensionalData.jl News: Ecosystem
 
 - YAXArrays.jl is now DD compatible
-- PyramidScheme.jl is built on DimensionalData.jl
+- PyramidScheme.jl is built on DD
 - Ecosystem package interop is now easy: `Raster(yaxarray)` works
 
 ## DimensionalData.jl News: `groupby`
@@ -89,8 +143,8 @@ Dimension-aware broadcasts
 
 ```{julia}
 using DimensionalData
-da1 = fill(2, X(3))
-da2 = fill(2, Y(4), X(3))
+Ax = fill(2, X(3))         # Define 2 DimArrays with 
+Ayx = fill(2, Y(4), X(3))  # matching X dimensions
 ```
 
 ---
@@ -98,14 +152,14 @@ da2 = fill(2, Y(4), X(3))
 Base broadcast fails:
 ```{julia}
 #| error: true
-da1 .* da2
+Ax .* Ayx
 ```
 
 ---
 
 `@d` broadcast works:
 ```{julia}
-@d da1 .* da2
+@d Ax .* Ayx
 ```
 
 ## DimensionalData.jl News: AlgebraOfGraphics.jl integration 
@@ -118,49 +172,82 @@ data(A) * mapping(X, :test) * visual(Lines) |> draw
 
 ## `DimIndices` and `DimSelectors` indexing:
 
-```{julia}
-A = rand(X(1:20), Y(1:20))
-B = zeros(X(5:2:10), Y(3:3:12))
-```
-
-```{julia}
-DimIndices(B)
-```
-
-```{julia}
-DimSelectors(B)
-```
 We can index directly with these:
 
 ```{julia}
-A[DimIndices(B)]
-```
-
-```{julia}
+A = rand(X(1:20), Y(1:20))
+B = zeros(X(5:2:10), Y(3:3:12))
 A[DimSelectors(B)]
 ```
 
 ## Extent indexing
 ```{julia}
+using Extents
 A[extent(B)]
 ```
 
-## Python Xarray integration (thanks `@JamesWrigley`)
-
 ## DimensionalData.jl Roadmap
 
-- PR: Any Tables.jl object to `DimStack`
-- PR: Interpolations.jl extension
+- Python Xarray integration - merged! (thanks `@JamesWrigley`)
+- PR: Any Tables.jl object to `DimArray` or `DimStack` (thanks `@JoshuaBilson`)
+- Interpolations.jl interop
 - `combine` for `groupby` 
 - lazy `GroupBy` for DiskArrays.jl use-cases
 
+# Extents.jl
+
+![](extents.png)
+
+## What is an `Extent`?
+
+```{julia}
+Extents.extent(A)
+```
+
+## Extents.jl News: DE-9IM predicates
+
+`covers`, `coveredby`, `contains`, `disjoint`, `equals`, `intersects`, `overlaps`, `touches`, `within`
+
+```{julia}
+Extents.intersects(extent(A), extent(B))
+```
+
+```{julia}
+Extents.contains(extent(A), extent(B))
+```
+
+```{julia}
+Extents.overlaps(extent(A), extent(B))
+```
+
+## Extents.jl News: operations on extents
+
+`intersection`, `union`, `buffer`, (`grow` not yet registered)
+
+```{julia}
+Extents.union(extent(A), extent(B))
+```
+---
+
+Theses are very fast:
+```{julia}
+using BenchmarkTools
+@btime Extents.intersection($(extent(A)), $(extent(B)))
+```
+
+## Extents.jl Roadmap
+
+- Support Closed and Open intervals for raster data
+- Support "Cyclic" extents that know about e.g. 180/-180 Longitude
+
+
 # DiskArrays.jl
 
-Lazy disk and network reads of chunked arrays. 
+Lazy disk and network reads of chunked arrays
 
-## DiskArrays.jl News
+Developed by `@meggart`
 
-Interface now implemented in:
+## DiskArrays.jl News: implementations
 
 - ArchGDAL.jl
 - Zarr.jl
@@ -174,29 +261,32 @@ Interface now implemented in:
 
 ## DiskArrays.jl News
 
-- Major structural update to accomodate NCDatasets.jl
-- Many bugfixes
+- DiskArrayEngine.jl developed for advanced use cases (by `@meggart`)
+- Major structural update to accomodate NCDatasets.jl (by `@meggart`)
 - Lazy concatenation with `ConcatDiskArray`
 - Caching with `DiskArrays.cache`
-- DiskArrayEngine.jl for advanced use cases
+- `iterate` improved
+- Many bugfixes
 
 ## DiskArrays.jl Issues
-
-- Slow iteration
+ 
 - Some missing Base implementations
 - Some correctness bugs
+- Tables.jl interop is broken for lazy Rasters or YAXArrays
 
 # CommonDataModel.jl
 
-Unites CF standards and dataset access accross many raster data types
+Unites raster data types with:
 
-Developed by `@AlexanderBaarth` 
+- CF standards 
+- COnsistent dataset access patterns 
+
+Developed by `@Alexander-Barth` 
 
 ## CommonDataModel.jl Example
 
-## CommonDataModel.jl News
+## CommonDataModel.jl News: implementations
 
-Implemented in:
 - NCDatasets.jl
 - GRIBDatasets.jl
 - ZarrDatasets.jl
@@ -205,37 +295,41 @@ Implemented in:
 ## CommonDataModel.jl Issues
 
 - `CommonDataModel.CFVariable` is not yet DiskArays.jl compatible
-- `crs` is not yet included in the interface
+- `GeoInterface.crs` is not included in the interface
+
+# YAXArrays.jl
+
+Lazy data cube loading and manipulation
+
+## YAXArrays.jl News
+
+- DimensionalData.jl compatibility (by `@felixcremer`)
+
+## YAXArrays.jl Roadmap
+
+- Question: do we need YAXArrays? and Rasters.jl?
+- Transitioning to a testing zone for DiskArrayEngine.jl?
 
 # Rasters.jl
 
-Builds on:
-- DimensionalData.jl
-- DiskArrays.jl 
-- CommonDataModel.jl 
+Common objects for all raster data, and GIS methods on them:
 
-To define container objects for all raster data: 
 - `Raster`
 - `RasterStack`
 - `RasterSeries`
 
-And common GIS methods on these objects
+## Rasters News: Benchmarks!
 
-## Rasters News: Performance
+![](rasters_performance.png)
 
-Thanks to `@asingvi` for setting this up.
+(thanks to `@asingvi17` for setting this up)
 
-[![image]](https://github.com/user-attachments/assets/1c6c56ac-4c5a-4096-984d-15bf2783682c)
+## Rasters News: CommonDataModel.jl
 
-Benchmarks where Rasters.jl is slower than another tool are now considered bugs
-
-
-## Rasters News: CommonDataModel.jl integration 
-
-Thanks `@tcarion` !
-
-- GRIB souce via GRIBDatasets.jl (thanks again `@tcarion`)
+- GRIB souce via GRIBDatasets.jl (thanks `@tcarion`)
 - Zarr source via ZarrDatasets.jl (thanks `@felixcremer`)
+
+## Rasters News: CommonDataModel.jl
 
 ```{julia}
 #| error: true
@@ -244,7 +338,7 @@ path = "https://s3.bgc-jena.mpg.de:9000/esdl-esdc-v3.0.2/esdc-16d-2.5deg-46x72x1
 zraster = Raster(path; name="air_temperature_2m")
 ```
 
-<!-- File types                      | Package         | Write    
+<!-- File types                 | Package         | Write    
 ------------------------------- | ----------      | -----
 Grib (read only)                | GRIBDatasets.jl | no 
 Zarr (PR nearly done!)          | ZarrDatasets.jl | no 
@@ -252,15 +346,12 @@ Netcdf/hdf5                     | NCDatasets.jl   | yes
 grd (simple Mmap data from R)   | native          | yes 
 GeoTIFF and everything else     | ArchGDAL.jl     | yes  -->
 
-## Rasters.jl News: Chunk setting
-
-```{julia}
-using Rasters, RasterDataSources, ArchGDAL, NCDatasets, DiskArrays
-bioclim5 = Raster(WorldClim{BioClim}, 5);
-```
+## Rasters.jl News: standardised chunk specification
 
 Write files with `chunks` keyword:
 ```{julia}
+using Rasters, RasterDataSources, ArchGDAL, NCDatasets
+bioclim5 = Raster(WorldClim{BioClim}, 5);
 write("rechunked_bioclim5.tif", bioclim5; chunks=(X(256), Y(256)), force=true)
 write("rechunked_bioclim5.nc",  bioclim5; chunks=(X(256), Y(256)), force=true)
 ```
@@ -269,6 +360,7 @@ write("rechunked_bioclim5.nc",  bioclim5; chunks=(X(256), Y(256)), force=true)
 
 Read tif lazily and check the the chunk pattern:
 ```{julia}
+using DiskArrays
 DiskArrays.eachchunk(Raster("rechunked_bioclim5.tif"; lazy=true))
 ```
 
@@ -276,51 +368,43 @@ And the same for netcdf:
 ```{julia}
 DiskArrays.eachchunk(Raster("rechunked_bioclim5.nc"; lazy=true))
 ```
+## Rasters.jl News
 
-- Optimised and improved `extract` (`@rafaqz` and `@tiemvanderdeure`)
+- Optimised and improved `extract`
 - Fast `cellarea` (thanks `@tiemvanderdeure`)
 
-## Rasters.jl Roadmap: PRs about to merge
+## Rasters.jl Roadmap: PRs
 
-- Even faster everything:
-  - `mosaic`
-  - `aggregate`
-  - `extract` lines
-  - `zonal` lines
-- Standardised missing value and scale/offset handling accross all sources
-- Better `create` methods for easier definition of empty `Raster` and `RasterStack`
-
-```julia
-create("test.tif"; res=missingval=NaN, fill=0.0) do A
-    # Work on lazy opened file here...
-end
-```
+- Standardised missing value and scale/offset handling accross all data sources
+- Better `create` methods for definition of empty `Raster` and `RasterStack`
+- Even faster everything: `mosaic`, `aggregate`, `extract` lines, `zonal` lines
 
 ## Rasters.jl Roadmap: planned
+
 - All methods working lazily with DiskArrays.jl
+- More methods working on GPUs
 - Unit handling for data and lookup values
 - Zarr writer
-- Other YAXArrays.jl functionality? 
-- Native `resample`?
-
+- Laziness modes
+- Incorporate YAXArrays.jl functionality? 
 
 ## GeoMakie.jl: Rasters integration
 
-Plot rasters in any projection.  Thanks `@asingvi`
+Plot rasters in any projection.  Thanks `@asingvi17`
 
 ```{julia}
-using GeoMakie
+using GeoMakie, CairoMakie
 A = Raster(WorldClim{BioClim}, 5)
 Makie.heatmap(A; axis=(; type=GeoAxis, dest="+proj=ortho +lon_0=19 +lat_0=72"))
 ```
 
-## RemoteSensingToolbox
+<!-- ## RemoteSensingToolbox
 
 [RemoteSensingToolbox.jl](https://github.com/JoshuaBillson/RemoteSensingToolbox.jl)
 
 ```{julia}
 #using RemoteSensingToolbox, Rasters
 #src = Landsat8("data/LC08_L2SP_043024_20200802_20200914_02_T1")
-#stack = Raster(src, :clouds; lazy=false)
+#stack = RasterStack(src; lazy=false)
 #true_color(Landsat8, stack)
-```
+``` -->
