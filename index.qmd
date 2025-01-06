@@ -74,6 +74,7 @@ flowchart
   end
 
 style Rasters.jl fill:#f9f
+style CommonDataModel.jl fill:#f9f
 style YAXArrays.jl fill:#f9f
 style GRIBDatasets.jl fill:#9ff
 style NCDatasets.jl fill:#9ff
@@ -109,6 +110,7 @@ flowchart
   end
 style Rasters.jl fill:#f9f
 style YAXArrays.jl fill:#f9f
+style CommonDataModel.jl fill:#f9f
 style FrontEnd fill:#f9f
 ```
 
@@ -121,6 +123,12 @@ Named dimensions and lookups for arrays
 - YAXArrays.jl is now DD compatible
 - PyramidScheme.jl is built on DD
 - Ecosystem package interop is now easy: `Raster(yaxarray)` works
+
+## DimensionalData.jl News: Docs
+
+[DimensionalData.jl Docs](https://rafaqz.github.io/DimensionalData.jl/stable/)
+
+Thanks `@lazarusA`
 
 ## DimensionalData.jl News: `groupby`
 
@@ -285,6 +293,21 @@ Developed by `@Alexander-Barth`
 
 ## CommonDataModel.jl Example
 
+```{julia}
+#| echo: false
+#| output: false
+# url = "https://psl.noaa.gov/thredds/fileServer/Datasets/noaa.oisst.v2.highres/sst.day.mean.2023.nc"
+# filename = "sst.day.mean.2023.nc"
+# isfile(filename) || download(url, filename)
+```
+
+```{julia}
+# using NCDatasets, CommonDataModel
+# ds = NCDataset(filename)
+# ncsst = ds["sst"]
+# ncsst2 = @select(ncsst,300 <= lon <= 360 && 0 <= lat <= 46 && time ≈ DateTime(2023,4,1))
+```
+
 ## CommonDataModel.jl News: implementations
 
 - NCDatasets.jl
@@ -307,16 +330,21 @@ Lazy data cube loading and manipulation
 
 ## YAXArrays.jl Roadmap
 
-- Question: do we need YAXArrays? and Rasters.jl?
+- Question: do we need both YAXArrays.jl and Rasters.jl?
+- How do we accomodate their differences?
 - Transitioning to a testing zone for DiskArrayEngine.jl?
 
 # Rasters.jl
 
-Common objects for all raster data, and GIS methods on them:
+Common objects for raster data, plot recipes, and GIS methods on them:
 
-- `Raster`
-- `RasterStack`
-- `RasterSeries`
+__Objects__
+
+`Raster`, `RasterStack`, `RasterSeries`
+
+__Functions__
+
+`rasterize`, `mask`, `zonal`, `extract`, `mosaic`, `aggregate`, `trim`, `crop`, etc...
 
 ## Rasters News: Benchmarks!
 
